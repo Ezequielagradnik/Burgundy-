@@ -102,3 +102,17 @@ test("adivina la categoría por la descripción, o nada si no hay pista", () => 
   assert.equal(adivinarCategoria("Papel kraft", categorias), "packaging");
   assert.equal(adivinarCategoria("Cosas varias", categorias), null);
 });
+
+test("miles con coma, como los escribe el dictado del iPhone", () => {
+  assert.deepEqual(leer("50 rosas a 80,000 y el flete a 12,000"), [
+    { descripcion: "50 rosas", monto: 80000, categoria_id: "flores", fecha: hoy },
+    { descripcion: "Flete", monto: 12000, categoria_id: "transporte", fecha: hoy },
+  ]);
+  const casos: [string, number][] = [
+    ["alquiler 1,500,000", 1500000],
+    ["papel 1,250.50", 1251],
+    ["nafta 1,5 mil", 1500],
+    ["cintas 12,50", 13],
+  ];
+  for (const [texto, monto] of casos) assert.equal(leer(texto)[0]?.monto, monto, texto);
+});

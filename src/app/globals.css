@@ -101,3 +101,15 @@ dialog[open] {
     animation: none;
   }
 }
+
+/* Safari iOS le da un ancho mínimo propio al input de fecha y se sale de la grilla */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}

@@ -49,7 +49,7 @@ export function GastoFields({
           maxLength={200}
         />
       </label>
-      <label className="relative">
+      <label className="relative min-w-0">
         <span className="sr-only">Monto</span>
         <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-3">$</span>
         <input
@@ -61,7 +61,7 @@ export function GastoFields({
         />
       </label>
       {showFecha ? (
-        <label>
+        <label className="min-w-0">
           <span className="sr-only">Fecha</span>
           <input
             type="date"

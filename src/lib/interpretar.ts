@@ -85,9 +85,13 @@ const MULTIPLICADORES: [RegExp, number][] = [
 
 type Monto = { valor: number; desde: number; hasta: number; seguro: boolean };
 
-/** "80.000" -> 80000, "1,5" -> 1.5, "1.250,50" -> 1250.5, "1.5" -> 1.5 */
+/**
+ * Miles con punto ("80.000", "1.250,50") o con coma, como escribe el dictado del iPhone
+ * ("80,000", "1,250.50"). Coma o punto con 1 o 2 dígitos detrás es decimal ("1,5", "12,50").
+ */
 function leerNumero(raw: string) {
   if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw)) return Number(raw.replace(/\./g, "").replace(",", "."));
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(raw)) return Number(raw.replace(/,/g, ""));
   return Number(raw.replace(",", "."));
 }
 
