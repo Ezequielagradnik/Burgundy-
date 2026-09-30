@@ -24,6 +24,7 @@ export function BottomNav({ categorias, aiEnabled }: { categorias: Categoria[]; 
       <Link
         key={href}
         href={href}
+        prefetch
         aria-current={active ? "page" : undefined}
         className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium ${
           active ? "text-wine" : "text-ink-3"

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "./supabase";
 import { addMonths, currentMonth, monthRange } from "./format";
 
@@ -26,11 +27,12 @@ export type GastoFijo = {
 
 export type MesResumen = { mes: string; fijos: number; variables: number; total: number };
 
-export async function getCategorias(): Promise<Categoria[]> {
+// Una sola consulta por request aunque la pidan el layout y la página
+export const getCategorias = cache(async (): Promise<Categoria[]> => {
   const { data, error } = await db().from("categorias").select("id, nombre, color").order("orden");
   if (error) throw error;
   return data;
-}
+});
 
 /** Crea los fijos del mes actual si todavía no existen. Idempotente. */
 export async function ensureFijosDelMes(month = currentMonth()) {

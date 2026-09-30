@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { interpretarGastos } from "./interpretar.ts";
+import { adivinarCategoria, interpretarGastos } from "./interpretar.ts";
 
 const categorias = [
   { id: "flores", nombre: "Flores y plantas" },
@@ -95,4 +95,10 @@ test("la cantidad no se confunde con el precio", () => {
   assert.deepEqual(leer("rosas x 24 $36.000"), [
     { descripcion: "Rosas x 24", monto: 36000, categoria_id: "flores", fecha: hoy },
   ]);
+});
+
+test("adivina la categoría por la descripción, o nada si no hay pista", () => {
+  assert.equal(adivinarCategoria("Nafta camioneta", categorias), "transporte");
+  assert.equal(adivinarCategoria("Papel kraft", categorias), "packaging");
+  assert.equal(adivinarCategoria("Cosas varias", categorias), null);
 });

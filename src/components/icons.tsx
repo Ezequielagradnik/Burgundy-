@@ -32,6 +32,9 @@ export const StopIcon = (p: SVGProps<SVGSVGElement>) => (
 export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}><path d="M12 5v14M5 12h14" /></svg>
 );
+export const PencilIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
+);
 export const TrashIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
 );

@@ -103,8 +103,27 @@ export async function guardarFijo(id: string | null, fijo: FijoInput) {
   const supabase = db();
 
   if (id) {
-    const { error } = await supabase.from("gastos_fijos").update(data).eq("id", z.string().uuid().parse(id));
+    const fijoId = z.string().uuid().parse(id);
+    const { error } = await supabase.from("gastos_fijos").update(data).eq("id", fijoId);
     if (error) throw new Error(error.message);
+
+    // El cambio también corrige el gasto ya anotado de este mes (los meses anteriores no se tocan)
+    if (data.activo) {
+      const mes = currentMonth();
+      const [y, m] = mes.split("-").map(Number);
+      const ultimoDia = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const { error: errorMes } = await supabase
+        .from("gastos")
+        .update({
+          monto: data.monto,
+          descripcion: data.nombre,
+          categoria_id: data.categoria_id,
+          fecha: `${mes}-${String(Math.min(data.dia, ultimoDia)).padStart(2, "0")}`,
+        })
+        .eq("gasto_fijo_id", fijoId)
+        .eq("periodo", `${mes}-01`);
+      if (errorMes) throw new Error(errorMes.message);
+    }
   } else {
     const { error } = await supabase.from("gastos_fijos").insert(data);
     if (error) throw new Error(error.message);
@@ -117,8 +136,16 @@ export async function guardarFijo(id: string | null, fijo: FijoInput) {
 
 export async function borrarFijo(id: string) {
   await requireSession();
-  // Los gastos ya registrados quedan en el historial (gasto_fijo_id pasa a null)
-  const { error } = await db().from("gastos_fijos").delete().eq("id", z.string().uuid().parse(id));
+  const fijoId = z.string().uuid().parse(id);
+  const supabase = db();
+  // Se borra el de este mes; los meses anteriores quedan en el historial (gasto_fijo_id pasa a null)
+  const { error: errorMes } = await supabase
+    .from("gastos")
+    .delete()
+    .eq("gasto_fijo_id", fijoId)
+    .eq("periodo", `${currentMonth()}-01`);
+  if (errorMes) throw new Error(errorMes.message);
+  const { error } = await supabase.from("gastos_fijos").delete().eq("id", fijoId);
   if (error) throw new Error(error.message);
   refresh();
 }

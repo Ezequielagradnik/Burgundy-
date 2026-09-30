@@ -1,6 +1,7 @@
 "use client";
 
 import type { Categoria } from "@/lib/data";
+import { adivinarCategoria } from "@/lib/interpretar";
 
 export type Draft = {
   descripcion: string;
@@ -37,7 +38,14 @@ export function GastoFields({
           className={input}
           placeholder="¿Qué fue?"
           value={value.descripcion}
-          onChange={(e) => set({ descripcion: e.target.value })}
+          onChange={(e) => {
+            const descripcion = e.target.value;
+            // Sugiere la categoría mientras escribe, salvo que ya la haya elegido a mano
+            const anterior = adivinarCategoria(value.descripcion, categorias);
+            const nueva = adivinarCategoria(descripcion, categorias);
+            const elegidaAMano = value.categoria_id !== null && value.categoria_id !== anterior;
+            set(elegidaAMano || !nueva ? { descripcion } : { descripcion, categoria_id: nueva });
+          }}
           maxLength={200}
         />
       </label>

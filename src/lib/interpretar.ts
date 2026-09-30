@@ -55,14 +55,19 @@ const SEPARADOR = /(\s*(?:,(?!\d)|(?<!\d),|[;\n])\s*|\s+(?:y|e|mas|más|tambien|
 const normalizar = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-function categoriaDe(texto: string, categorias: CategoriaRef[]) {
+/** Categoría según palabras clave ("nafta" -> Transporte). Null si no hay ninguna pista. */
+export function adivinarCategoria(texto: string, categorias: CategoriaRef[]) {
   const palabras = normalizar(texto).split(/[^a-zñ]+/);
   for (const [nombre, raices] of Object.entries(PALABRAS_CATEGORIA)) {
     if (palabras.some((p) => raices.some((r) => p.startsWith(r)))) {
       return categorias.find((c) => c.nombre === nombre)?.id ?? null;
     }
   }
-  return categorias.find((c) => c.nombre === "Otros")?.id ?? null;
+  return null;
+}
+
+function categoriaDe(texto: string, categorias: CategoriaRef[]) {
+  return adivinarCategoria(texto, categorias) ?? categorias.find((c) => c.nombre === "Otros")?.id ?? null;
 }
 
 const NUMEROS_EN_PALABRAS: Record<string, number> = {

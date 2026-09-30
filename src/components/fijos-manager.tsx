@@ -5,7 +5,7 @@ import { borrarFijo, guardarFijo } from "@/lib/actions";
 import type { Categoria, GastoFijo } from "@/lib/data";
 import { money } from "@/lib/format";
 import { onlyDigits } from "./gasto-fields";
-import { PlusIcon } from "./icons";
+import { PencilIcon, PlusIcon, TrashIcon } from "./icons";
 import { Sheet } from "./sheet";
 
 type FijoDraft = { nombre: string; monto: string; categoria_id: string | null; dia: string; activo: boolean };
@@ -18,6 +18,8 @@ const SUGERENCIAS = ["Luz", "Gas", "Alquiler", "Internet", "Agua", "Monotributo"
 
 export function FijosManager({ fijos, categorias }: { fijos: GastoFijo[]; categorias: Categoria[] }) {
   const [editing, setEditing] = useState<GastoFijo | "new" | null>(null);
+  const [borrando, setBorrando] = useState<string | null>(null);
+  const [pending, start] = useTransition();
   const catName = new Map(categorias.map((c) => [c.id, c.nombre]));
 
   return (
@@ -26,20 +28,60 @@ export function FijosManager({ fijos, categorias }: { fijos: GastoFijo[]; catego
         <ul className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
           {fijos.map((f) => (
             <li key={f.id}>
-              <button
-                type="button"
-                onClick={() => setEditing(f)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left active:bg-bg ${f.activo ? "" : "opacity-50"}`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{f.nombre}</span>
-                  <span className="text-xs text-ink-3">
-                    Día {f.dia} · {(f.categoria_id && catName.get(f.categoria_id)) ?? "Sin categoría"}
-                    {f.activo ? "" : " · Pausado"}
+              {borrando === f.id ? (
+                <div className="flex items-center gap-2 bg-wine-soft px-4 py-3">
+                  <span className="min-w-0 flex-1 text-sm text-wine">
+                    ¿Borrar <strong>{f.nombre}</strong>? Se saca de este mes, los anteriores quedan.
                   </span>
-                </span>
-                <span className="tabular shrink-0 font-medium">{money(f.monto)}</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setBorrando(null)}
+                    className="rounded-full px-3 py-1.5 text-sm text-ink-2 active:bg-surface"
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      start(async () => {
+                        await borrarFijo(f.id);
+                        setBorrando(null);
+                      })
+                    }
+                    className="rounded-full bg-danger px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {pending ? "Borrando…" : "Borrar"}
+                  </button>
+                </div>
+              ) : (
+                <div className={`flex items-center gap-1 py-1.5 pr-2 pl-4 ${f.activo ? "" : "opacity-50"}`}>
+                  <button type="button" onClick={() => setEditing(f)} className="min-w-0 flex-1 py-1.5 text-left">
+                    <span className="block truncate font-medium">{f.nombre}</span>
+                    <span className="text-xs text-ink-3">
+                      Día {f.dia} · {(f.categoria_id && catName.get(f.categoria_id)) ?? "Sin categoría"}
+                      {f.activo ? "" : " · Pausado"}
+                    </span>
+                  </button>
+                  <span className="tabular shrink-0 pr-1 font-medium">{money(f.monto)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(f)}
+                    aria-label={`Editar ${f.nombre}`}
+                    className="rounded-full p-2 text-ink-2 active:bg-bg"
+                  >
+                    <PencilIcon width={18} height={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBorrando(f.id)}
+                    aria-label={`Borrar ${f.nombre}`}
+                    className="rounded-full p-2 text-danger active:bg-bg"
+                  >
+                    <TrashIcon width={18} height={18} />
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -63,11 +105,7 @@ export function FijosManager({ fijos, categorias }: { fijos: GastoFijo[]; catego
         title={editing === "new" ? "Nuevo gasto fijo" : "Editar gasto fijo"}
       >
         {editing ? (
-          <FijoForm
-            fijo={editing === "new" ? null : editing}
-            categorias={categorias}
-            onDone={() => setEditing(null)}
-          />
+          <FijoForm fijo={editing === "new" ? null : editing} categorias={categorias} onDone={() => setEditing(null)} />
         ) : null}
       </Sheet>
     </>
@@ -151,7 +189,7 @@ function FijoForm({
           />
         </label>
         <label className="relative">
-          <span className="mb-1 block text-xs text-ink-3">Monto aprox.</span>
+          <span className="mb-1 block text-xs text-ink-3">{fijo ? "Monto" : "Monto aprox."}</span>
           <span className="pointer-events-none absolute bottom-3 left-3 text-ink-3">$</span>
           <input
             className={`${input} tabular pl-7 font-medium`}
@@ -234,7 +272,7 @@ function FijoForm({
           onClick={() => (confirmDelete ? run(() => borrarFijo(fijo.id)) : setConfirmDelete(true))}
           className={`rounded-2xl py-3 text-sm font-medium ${confirmDelete ? "bg-danger text-white" : "text-danger"}`}
         >
-          {confirmDelete ? "Tocá de nuevo para borrar" : "Borrar (los meses anteriores quedan)"}
+          {confirmDelete ? "Tocá de nuevo para borrar" : "Borrar (se saca de este mes, los anteriores quedan)"}
         </button>
       ) : null}
     </div>

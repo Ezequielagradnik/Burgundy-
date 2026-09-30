@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <>
-      <main className="pt-safe mx-auto min-h-dvh max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)]">
+      <main className="pt-safe min-h-dvh w-full px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)]">
         {children}
       </main>
       <BottomNav categorias={categorias} aiEnabled={aiEnabled()} />

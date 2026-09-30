@@ -9,7 +9,7 @@ export default async function GastosPage({ searchParams }: PageProps<"/gastos">)
   const total = gastos.reduce((s, g) => s + g.monto, 0);
 
   return (
-    <div className="flex flex-col gap-4 pt-2">
+    <div className="mx-auto max-w-md flex flex-col gap-4 pt-2">
       <h1 className="font-display text-2xl">Gastos</h1>
       <MonthSwitcher month={mes} basePath="/gastos" />
       <p className="tabular px-1 text-sm text-ink-2">

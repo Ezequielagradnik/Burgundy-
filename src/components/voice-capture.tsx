@@ -63,7 +63,15 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
     recorder.current = null;
   }
 
-  // Sin IA: se abre el texto y el dueño dicta con el micrófono del teclado
+  // Sin IA: el botón abre directo la carga campo por campo
+  function openManual() {
+    cancelled.current = true;
+    setDrafts([emptyDraft()]);
+    setStep({ name: "review", origen: "manual" });
+    setOpen(true);
+  }
+
+  // Texto libre ("flores 45 mil y nafta 20 mil"), escrito o dictado con el teclado
   function openTyping() {
     cancelled.current = true;
     setTexto("");
@@ -101,7 +109,8 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
     } catch {
       setStep({
         name: "error",
-        message: "No tengo permiso para usar el micrófono. Activalo en Ajustes > Safari > Micrófono, o escribí el gasto.",
+        message:
+          "No tengo permiso para usar el micrófono. Activalo en Ajustes > Safari > Micrófono, o escribí el gasto.",
       });
     }
   }
@@ -176,7 +185,7 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
     <>
       <button
         type="button"
-        onClick={aiEnabled ? startRecording : openTyping}
+        onClick={aiEnabled ? startRecording : openManual}
         aria-label="Anotar un gasto"
         className="-mt-7 mb-1 flex size-16 items-center justify-center rounded-full bg-wine text-bg shadow-lg shadow-wine/30 ring-4 ring-bg active:scale-95"
       >
@@ -196,7 +205,13 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
         open={open}
         onClose={close}
         title={
-          step.name === "review" ? "Revisá y guardá" : step.name === "typing" && aiEnabled ? "Escribí el gasto" : "Nuevo gasto"
+          step.name === "review"
+            ? step.origen === "manual"
+              ? "Nuevo gasto"
+              : "Revisá y guardá"
+            : step.name === "typing" && aiEnabled
+              ? "Escribí el gasto"
+              : "Nuevo gasto"
         }
       >
         {step.name === "recording" ? (
@@ -305,16 +320,14 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
 
         {step.name === "review" ? (
           <div className="flex flex-col gap-4">
-            {step.texto ? (
-              <p className="rounded-xl bg-bg px-3 py-2 text-sm text-ink-2 italic">“{step.texto}”</p>
-            ) : null}
+            {step.texto ? <p className="rounded-xl bg-bg px-3 py-2 text-sm text-ink-2 italic">“{step.texto}”</p> : null}
 
             <ul className="flex flex-col gap-4">
               {drafts.map((d, i) => (
                 <li key={i} className="flex flex-col gap-2 border-b border-line pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium tracking-wide text-ink-3 uppercase">Gasto {i + 1}</span>
-                    {drafts.length > 1 ? (
+                  {drafts.length > 1 ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium tracking-wide text-ink-3 uppercase">Gasto {i + 1}</span>
                       <button
                         type="button"
                         onClick={() => setDrafts((all) => all.filter((_, j) => j !== i))}
@@ -323,8 +336,8 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
                       >
                         <TrashIcon width={18} height={18} />
                       </button>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                   <GastoFields
                     value={d}
                     categorias={categorias}
@@ -354,6 +367,12 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
                   ? `Guardar ${validCount} gastos · ${money(total)}`
                   : `Guardar · ${money(total)}`}
             </button>
+
+            {step.origen === "manual" && !aiEnabled ? (
+              <button type="button" onClick={openTyping} className="py-1 text-sm text-ink-2">
+                Dictar o escribir varios juntos
+              </button>
+            ) : null}
           </div>
         ) : null}
       </Sheet>

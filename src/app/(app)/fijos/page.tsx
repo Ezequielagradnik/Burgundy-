@@ -7,11 +7,11 @@ export default async function FijosPage() {
   const total = fijos.filter((f) => f.activo).reduce((s, f) => s + f.monto, 0);
 
   return (
-    <div className="flex flex-col gap-4 pt-2">
+    <div className="mx-auto max-w-md flex flex-col gap-4 pt-2">
       <div>
         <h1 className="font-display text-2xl">Gastos fijos</h1>
         <p className="mt-1 text-sm text-ink-2">
-          Se anotan solos cada mes. Si una factura vino distinta, corregí el monto desde Gastos.
+          Se anotan solos cada mes. Si cambiás un monto, se corrige también el de este mes.
         </p>
       </div>
       <p className="tabular px-1 text-sm text-ink-2">

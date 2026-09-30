@@ -19,7 +19,7 @@ export default async function InicioPage() {
   const cambio = anterior.total > 0 ? Math.round(((actual.total - anterior.total) / anterior.total) * 100) : null;
 
   return (
-    <div className="flex flex-col gap-5 pt-2">
+    <div className="mx-auto max-w-md flex flex-col gap-5 pt-2">
       <header className="flex items-center justify-between">
         <p className="font-display text-2xl text-wine">Burgundy</p>
         <p className="text-sm text-ink-3 capitalize">{monthLabel(mes, true)}</p>
