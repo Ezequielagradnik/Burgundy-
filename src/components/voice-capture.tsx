@@ -27,7 +27,7 @@ function pickMimeType() {
   return "";
 }
 
-export function VoiceCapture({ categorias }: { categorias: Categoria[] }) {
+export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[]; aiEnabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>({ name: "recording" });
   const [seconds, setSeconds] = useState(0);
@@ -61,6 +61,14 @@ export function VoiceCapture({ categorias }: { categorias: Categoria[] }) {
   function releaseMic() {
     recorder.current?.stream.getTracks().forEach((t) => t.stop());
     recorder.current = null;
+  }
+
+  // Sin IA: se abre el texto y el dueño dicta con el micrófono del teclado
+  function openTyping() {
+    cancelled.current = true;
+    setTexto("");
+    setStep({ name: "typing" });
+    setOpen(true);
   }
 
   async function startRecording() {
@@ -168,8 +176,8 @@ export function VoiceCapture({ categorias }: { categorias: Categoria[] }) {
     <>
       <button
         type="button"
-        onClick={startRecording}
-        aria-label="Grabar un gasto"
+        onClick={aiEnabled ? startRecording : openTyping}
+        aria-label="Anotar un gasto"
         className="-mt-7 mb-1 flex size-16 items-center justify-center rounded-full bg-wine text-bg shadow-lg shadow-wine/30 ring-4 ring-bg active:scale-95"
       >
         <MicIcon width={28} height={28} />
@@ -188,7 +196,7 @@ export function VoiceCapture({ categorias }: { categorias: Categoria[] }) {
         open={open}
         onClose={close}
         title={
-          step.name === "review" ? "Revisá y guardá" : step.name === "typing" ? "Escribí el gasto" : "Nuevo gasto"
+          step.name === "review" ? "Revisá y guardá" : step.name === "typing" && aiEnabled ? "Escribí el gasto" : "Nuevo gasto"
         }
       >
         {step.name === "recording" ? (
@@ -234,6 +242,12 @@ export function VoiceCapture({ categorias }: { categorias: Categoria[] }) {
               if (texto.trim()) void send(texto.trim());
             }}
           >
+            {!aiEnabled ? (
+              <p className="text-sm text-ink-2">
+                Tocá <MicIcon width={15} height={15} className="inline -mt-0.5" aria-label="el micrófono" /> en el
+                teclado y decí el gasto. Ej: <em>“50 rosas a 80 mil y el flete 12 mil”</em>
+              </p>
+            ) : null}
             <textarea
               autoFocus
               rows={3}
@@ -275,8 +289,12 @@ export function VoiceCapture({ categorias }: { categorias: Categoria[] }) {
               {step.message}
             </p>
             <div className="flex w-full flex-col gap-2">
-              <button type="button" onClick={startRecording} className="rounded-2xl bg-wine py-3.5 font-medium text-bg">
-                Grabar de nuevo
+              <button
+                type="button"
+                onClick={aiEnabled ? startRecording : openTyping}
+                className="rounded-2xl bg-wine py-3.5 font-medium text-bg"
+              >
+                {aiEnabled ? "Grabar de nuevo" : "Probar de nuevo"}
               </button>
               <button type="button" onClick={() => setStep({ name: "typing" })} className="py-2 text-sm text-ink-2">
                 Escribir

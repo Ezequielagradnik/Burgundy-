@@ -1,7 +1,9 @@
 import { gateway, generateText, Output, transcribe } from "ai";
 import { z } from "zod";
+import { aiEnabled } from "@/lib/ai";
 import { getCategorias } from "@/lib/data";
 import { today } from "@/lib/format";
+import { interpretarGastos } from "@/lib/interpretar";
 
 export const maxDuration = 60;
 
@@ -26,6 +28,12 @@ export async function POST(request: Request) {
   let texto = String(form.get("texto") ?? "").trim();
 
   if (audio instanceof File && audio.size > 0) {
+    if (!aiEnabled()) {
+      return Response.json(
+        { error: "El audio todavía no está activado. Usá el micrófono del teclado para dictar." },
+        { status: 400 },
+      );
+    }
     if (audio.size > MAX_AUDIO_BYTES) {
       return Response.json({ error: "El audio es muy largo. Probá con uno de menos de 2 minutos." }, { status: 413 });
     }
@@ -48,6 +56,9 @@ export async function POST(request: Request) {
 
   const categorias = await getCategorias();
   const hoy = today();
+  const porReglas = () => Response.json({ texto, gastos: interpretarGastos(texto, { hoy, categorias }), modo: "reglas" });
+
+  if (!aiEnabled()) return porReglas();
 
   try {
     const { output } = await generateText({
@@ -77,9 +88,10 @@ export async function POST(request: Request) {
         fecha: /^\d{4}-\d{2}-\d{2}$/.test(g.fecha) && g.fecha <= hoy ? g.fecha : hoy,
       }));
 
-    return Response.json({ texto, gastos });
+    return Response.json({ texto, gastos, modo: "ia" });
   } catch (error) {
+    // Si la IA falla (sin crédito, caída, etc.) usamos las reglas para no dejarlo sin anotar
     console.error("parse", error);
-    return Response.json({ texto, gastos: [], error: "No pude entender los gastos. Cargalos a mano." }, { status: 200 });
+    return porReglas();
   }
 }

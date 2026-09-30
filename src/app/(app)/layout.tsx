@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { BottomNav } from "@/components/bottom-nav";
+import { aiEnabled } from "@/lib/ai";
 import { ensureFijosDelMes, getCategorias } from "@/lib/data";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -12,7 +13,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <main className="pt-safe mx-auto min-h-dvh max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)]">
         {children}
       </main>
-      <BottomNav categorias={categorias} />
+      <BottomNav categorias={categorias} aiEnabled={aiEnabled()} />
     </>
   );
 }

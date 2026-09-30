@@ -15,7 +15,7 @@ const RIGHT = [
   { href: "/fijos", label: "Fijos", Icon: RepeatIcon },
 ] as const;
 
-export function BottomNav({ categorias }: { categorias: Categoria[] }) {
+export function BottomNav({ categorias, aiEnabled }: { categorias: Categoria[]; aiEnabled: boolean }) {
   const pathname = usePathname();
 
   const tab = ({ href, label, Icon }: (typeof LEFT)[number] | (typeof RIGHT)[number]) => {
@@ -40,7 +40,7 @@ export function BottomNav({ categorias }: { categorias: Categoria[] }) {
       <div className="mx-auto flex max-w-md items-end px-2">
         {LEFT.map(tab)}
         <div className="flex flex-1 justify-center">
-          <VoiceCapture categorias={categorias} />
+          <VoiceCapture categorias={categorias} aiEnabled={aiEnabled} />
         </div>
         {RIGHT.map(tab)}
       </div>
