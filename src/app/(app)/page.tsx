@@ -1,16 +1,28 @@
 import Link from "next/link";
 import { GastoList } from "@/components/gasto-list";
 import { MonthlyChart } from "@/components/monthly-chart";
-import { getCategorias, getResumenMensual, getUltimosGastos } from "@/lib/data";
+import { getCategorias, getGastosDelMes, getGastosFijos, getResumenMensual, getUltimosGastos } from "@/lib/data";
+import { ocurrenciasEnMes } from "@/lib/fijos";
 import { currentMonth, money, monthLabel, today } from "@/lib/format";
 
 export default async function InicioPage() {
   const mes = currentMonth();
-  const [categorias, resumen, ultimos] = await Promise.all([
+  const [categorias, resumen, ultimos, fijos, delMes] = await Promise.all([
     getCategorias(),
     getResumenMensual(6),
     getUltimosGastos(6),
+    getGastosFijos(),
+    getGastosDelMes(mes),
   ]);
+
+  // Fijos que todavía no cayeron este mes (las flores del próximo lunes, la luz del 10)
+  const hoy = today();
+  const anotados = new Set(delMes.filter((g) => g.gasto_fijo_id).map((g) => `${g.gasto_fijo_id}|${g.fecha}`));
+  const faltanFijos = fijos
+    .filter((f) => f.activo)
+    .flatMap((f) => ocurrenciasEnMes(f, mes).map((fecha) => ({ f, fecha })))
+    .filter(({ f, fecha }) => fecha > hoy && !anotados.has(`${f.id}|${fecha}`))
+    .reduce((s, { f }) => s + f.monto, 0);
 
   const actual = resumen.at(-1)!;
   const anterior = resumen.at(-2)!;
@@ -39,6 +51,9 @@ export default async function InicioPage() {
           <div className="rounded-2xl bg-bg/10 px-3 py-2.5">
             <p className="text-xs opacity-75">Fijos</p>
             <p className="tabular font-medium">{money(actual.fijos)}</p>
+            {faltanFijos > 0 ? (
+              <p className="tabular mt-0.5 text-xs opacity-75">Faltan {money(faltanFijos)}</p>
+            ) : null}
           </div>
           <div className="rounded-2xl bg-bg/10 px-3 py-2.5">
             <p className="text-xs opacity-75">Variables</p>

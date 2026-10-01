@@ -3,7 +3,7 @@ import { z } from "zod";
 import { aiEnabled } from "@/lib/ai";
 import { getCategorias } from "@/lib/data";
 import { today } from "@/lib/format";
-import { interpretarGastos } from "@/lib/interpretar";
+import { interpretarFijos, interpretarGastos } from "@/lib/interpretar";
 
 export const maxDuration = 60;
 
@@ -22,9 +22,23 @@ const extraccion = z.object({
   ),
 });
 
+const extraccionFijos = z.object({
+  fijos: z.array(
+    z.object({
+      nombre: z.string().describe("Nombre corto con mayúscula inicial. Ej: 'Alquiler', 'Flores'"),
+      monto: z.number().describe("Monto en pesos de CADA vez que se paga, no el total del mes"),
+      categoria: z.string().describe("Nombre exacto de una de las categorías disponibles"),
+      frecuencia: z.enum(["mensual", "quincenal", "semanal"]),
+      dia: z.number().int().describe("Mensual: día del mes (1-31). Quincenal: primer día (1-15). Semanal: 1"),
+      dias_semana: z.array(z.number().int()).describe("Solo semanal: 1=lunes ... 7=domingo. Si no, vacío"),
+    }),
+  ),
+});
+
 export async function POST(request: Request) {
   const form = await request.formData();
   const audio = form.get("audio");
+  const tipo = form.get("tipo") === "fijos" ? "fijos" : "gastos";
   let texto = String(form.get("texto") ?? "").trim();
 
   if (audio instanceof File && audio.size > 0) {
@@ -56,9 +70,49 @@ export async function POST(request: Request) {
 
   const categorias = await getCategorias();
   const hoy = today();
-  const porReglas = () => Response.json({ texto, gastos: interpretarGastos(texto, { hoy, categorias }), modo: "reglas" });
+  const porReglas = () =>
+    tipo === "fijos"
+      ? Response.json({ texto, fijos: interpretarFijos(texto, { categorias }), modo: "reglas" })
+      : Response.json({ texto, gastos: interpretarGastos(texto, { hoy, categorias }), modo: "reglas" });
 
   if (!aiEnabled()) return porReglas();
+
+  const porNombre = new Map(categorias.map((c) => [c.nombre.toLowerCase(), c.id]));
+  const otros = porNombre.get("otros") ?? null;
+
+  if (tipo === "fijos") {
+    try {
+      const { output } = await generateText({
+        model: PARSER_MODEL,
+        output: Output.object({ schema: extraccionFijos }),
+        system: [
+          "Sos el asistente contable de Burgundy, una florería en Argentina.",
+          "El dueño te dice sus gastos fijos (los que se repiten) y tenés que extraer cada uno.",
+          "- Montos en pesos argentinos. '50 lucas' o '50 mil' = 50000. '1,5 palos' = 1500000.",
+          "- monto es lo que se paga cada vez. 'Flores lunes y miércoles 280 mil cada día' = 280000, semanal, [1, 3].",
+          "- 'Cada 15 días' o 'quincenal' = quincenal. Si no dice día, dia = 1.",
+          "- Si no dice frecuencia, es mensual. Si no dice día del mes, dia = 1.",
+          `- Categorías disponibles: ${categorias.map((c) => c.nombre).join(", ")}. Si ninguna encaja, usá "Otros".`,
+          "- Ignorá totales, sumas y aclaraciones. No inventes montos.",
+        ].join("\n"),
+        prompt: texto,
+      });
+      const fijos = output.fijos
+        .filter((f) => f.monto > 0 && (f.frecuencia !== "semanal" || f.dias_semana.length > 0))
+        .map((f) => ({
+          nombre: f.nombre,
+          monto: Math.round(f.monto),
+          categoria_id: porNombre.get(f.categoria.toLowerCase()) ?? otros,
+          frecuencia: f.frecuencia,
+          dia: Math.min(Math.max(f.dia, 1), f.frecuencia === "quincenal" ? 15 : 31),
+          dias_semana: f.frecuencia === "semanal" ? f.dias_semana.filter((d) => d >= 1 && d <= 7) : [],
+        }));
+      return Response.json({ texto, fijos, modo: "ia" });
+    } catch (error) {
+      console.error("parse fijos", error);
+      return porReglas();
+    }
+  }
 
   try {
     const { output } = await generateText({
@@ -77,8 +131,6 @@ export async function POST(request: Request) {
       prompt: texto,
     });
 
-    const porNombre = new Map(categorias.map((c) => [c.nombre.toLowerCase(), c.id]));
-    const otros = porNombre.get("otros") ?? null;
     const gastos = output.gastos
       .filter((g) => g.monto > 0)
       .map((g) => ({

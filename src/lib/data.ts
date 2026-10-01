@@ -1,7 +1,8 @@
 import "server-only";
 import { cache } from "react";
 import { db } from "./supabase";
-import { addMonths, currentMonth, monthRange } from "./format";
+import { addMonths, currentMonth, monthRange, today } from "./format";
+import type { Frecuencia } from "./fijos";
 
 export type Categoria = { id: string; nombre: string; color: string };
 
@@ -23,6 +24,8 @@ export type GastoFijo = {
   categoria_id: string | null;
   dia: number;
   activo: boolean;
+  frecuencia: Frecuencia;
+  dias_semana: number[];
 };
 
 export type MesResumen = { mes: string; fijos: number; variables: number; total: number };
@@ -34,9 +37,9 @@ export const getCategorias = cache(async (): Promise<Categoria[]> => {
   return data;
 });
 
-/** Crea los fijos del mes actual si todavía no existen. Idempotente. */
-export async function ensureFijosDelMes(month = currentMonth()) {
-  const { error } = await db().rpc("generar_gastos_fijos", { p_mes: `${month}-01` });
+/** Anota los fijos que ya cayeron hasta hoy y falten (las flores del lunes, el lunes). Idempotente. */
+export async function ensureFijosAlDia() {
+  const { error } = await db().rpc("generar_gastos_fijos", { p_hasta: today() });
   if (error) console.error("generar_gastos_fijos", error);
 }
 
@@ -91,7 +94,7 @@ export async function getResumenMensual(meses = 6, hasta = currentMonth()): Prom
 export async function getGastosFijos(): Promise<GastoFijo[]> {
   const { data, error } = await db()
     .from("gastos_fijos")
-    .select("id, nombre, monto, categoria_id, dia, activo")
+    .select("id, nombre, monto, categoria_id, dia, activo, frecuencia, dias_semana")
     .order("activo", { ascending: false })
     .order("dia");
   if (error) throw error;

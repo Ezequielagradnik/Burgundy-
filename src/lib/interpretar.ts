@@ -27,7 +27,7 @@ const PALABRAS_CATEGORIA: Record<string, string[]> = {
   ],
   Servicios: [
     "luz", "gas", "agua", "internet", "wifi", "telefono", "celular", "edenor", "edesur", "metrogas",
-    "aysa", "cable", "posnet", "mercadopago",
+    "aysa", "cable", "posnet", "mercadopago", "prosegur", "alarma", "seguridad", "seguro",
   ],
   Alquiler: ["alquiler", "expensa"],
   Sueldos: ["sueldo", "empleado", "empleada", "aguinaldo", "jornal", "vacaciones", "cargas"],
@@ -175,10 +175,11 @@ function separarGastos(texto: string) {
   return segmentos;
 }
 
-function limpiarDescripcion(texto: string) {
+function limpiarDescripcion(texto: string, ruidoExtra: Set<string> = new Set()) {
   const palabras = texto.replace(/[.,;:!?¿¡]/g, " ").split(/\s+/).filter(Boolean);
-  while (palabras.length && RELLENO_INICIO.has(normalizar(palabras[0]))) palabras.shift();
-  while (palabras.length && RELLENO_FIN.has(normalizar(palabras[palabras.length - 1]))) palabras.pop();
+  const esRuido = (p: string, set: Set<string>) => set.has(normalizar(p)) || ruidoExtra.has(normalizar(p));
+  while (palabras.length && esRuido(palabras[0], RELLENO_INICIO)) palabras.shift();
+  while (palabras.length && esRuido(palabras[palabras.length - 1], RELLENO_FIN)) palabras.pop();
   const limpio = palabras.filter((p) => normalizar(p) !== "pesos").join(" ");
   return limpio.charAt(0).toUpperCase() + limpio.slice(1);
 }
@@ -202,4 +203,85 @@ export function interpretarGastos(
     gastos.push({ descripcion, monto: monto.valor, categoria_id, fecha });
   }
   return gastos;
+}
+
+// Gastos fijos ------------------------------------------------------------
+
+export type FijoInterpretado = {
+  nombre: string;
+  monto: number;
+  categoria_id: string | null;
+  frecuencia: "mensual" | "quincenal" | "semanal";
+  dia: number;
+  dias_semana: number[];
+};
+
+const DIAS_ISO = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
+const DIA_SEMANA_RE = new RegExp(String.raw`\b(${DIAS_ISO.join("|")})s?\b`, "g");
+const QUINCENAL_RE =
+  /\b(?:cada\s+(?:15|quince|14|catorce)\s+dias|quincenal(?:es|mente)?|cada\s+dos\s+semanas|dos\s+veces\s+(?:al|por)\s+mes)\b/g;
+const SEMANAL_RE = /\b(?:semanal(?:es|mente)?|por\s+semana|cada\s+semana|todas\s+las\s+semanas)\b/g;
+const MENSUAL_RE = /\b(?:mensual(?:es|mente)?|por\s+mes|al\s+mes|cada\s+mes|todos\s+los\s+meses)\b|\/\s*mes\b/g;
+// "el día 10", "día 10", "el 10" (pero no "el 1.370.000" ni "el 10 mil")
+const DIA_MES_RE = /\b(?:el\s+)?dia\s+(\d{1,2})\b|\bel\s+(\d{1,2})\b(?![.,]\d)(?!\s*(?:mil|lucas?|k|palos?|millon))/g;
+const OTRO_RUIDO_RE = /\bcada\s+(?:dia|vez|uno)\b|\bc\/u\b|\bvariable\b|\bestimado\b/g;
+const RUIDO_FIJO = new Set(["cada", "dia", "dias", "todos", "todas", "los", "las", "o", "y"]);
+
+/** Tapa con espacios lo que matchea, para no mover las posiciones del resto del texto. */
+function tapar(texto: string, re: RegExp) {
+  return texto.replace(re, (m) => " ".repeat(m.length));
+}
+
+/**
+ * Lee gastos fijos dictados o pegados: "flores lunes y miércoles 280 mil, alquiler 1.370.000 el día 1,
+ * papelería cada 15 días 100 mil". También acepta una lista pegada, una línea por gasto.
+ */
+export function interpretarFijos(entrada: string, { categorias }: { categorias: CategoriaRef[] }): FijoInterpretado[] {
+  const fijos: FijoInterpretado[] = [];
+  const sinEmojis = entrada.normalize("NFC").replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, " ");
+
+  for (const linea of sinEmojis.split(/\n+/)) {
+    if (/^\s*total\b/.test(normalizar(linea))) continue;
+
+    for (const segmento of separarGastos(linea.trim())) {
+      const n = normalizar(segmento);
+      const dias = [...new Set([...n.matchAll(DIA_SEMANA_RE)].map((m) => DIAS_ISO.indexOf(m[1]) + 1))].sort(
+        (a, b) => a - b,
+      );
+      const diaMes = [...n.matchAll(DIA_MES_RE)].map((m) => Number(m[1] ?? m[2])).find((d) => d >= 1 && d <= 31);
+      const frecuencia = new RegExp(QUINCENAL_RE.source).test(n)
+        ? "quincenal"
+        : dias.length || new RegExp(SEMANAL_RE.source).test(n)
+          ? "semanal"
+          : "mensual";
+
+      // Sin las frases de frecuencia y de día, los números que quedan son plata
+      let limpio = segmento;
+      for (const re of [QUINCENAL_RE, SEMANAL_RE, MENSUAL_RE, DIA_MES_RE, DIA_SEMANA_RE, OTRO_RUIDO_RE]) {
+        const tapado = tapar(normalizar(limpio), re);
+        limpio = [...limpio].map((c, i) => (tapado[i] === " " && n[i] !== " " ? " " : c)).join("");
+      }
+      const montos = encontrarMontos(limpio);
+      const monto = montos.find((m) => m.seguro) ?? elegirMonto(montos);
+      // Un fijo de menos de $1.000 no existe: es un número suelto de una oración
+      if (!monto || monto.valor < 1000) continue;
+
+      let resto = limpio;
+      for (const m of montos) resto = resto.slice(0, m.desde) + " ".repeat(m.hasta - m.desde) + resto.slice(m.hasta);
+      resto = resto.replace(/[—–\-/()×$*|]/g, " ");
+      const nombre = limpiarDescripcion(resto, RUIDO_FIJO);
+      // Más de 5 palabras es una oración, no el nombre de un gasto
+      if (!nombre || nombre.split(/\s+/).length > 5) continue;
+
+      fijos.push({
+        nombre,
+        monto: monto.valor,
+        categoria_id: categoriaDe(nombre, categorias),
+        frecuencia,
+        dia: frecuencia === "quincenal" ? Math.min(diaMes ?? 1, 15) : (diaMes ?? 1),
+        dias_semana: frecuencia === "semanal" ? dias : [],
+      });
+    }
+  }
+  return fijos;
 }

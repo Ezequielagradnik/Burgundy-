@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { crearGastos } from "@/lib/actions";
 import type { Categoria } from "@/lib/data";
 import { money, today } from "@/lib/format";
 import { GastoFields, isValidDraft, toInput, type Draft } from "./gasto-fields";
 import { KeyboardIcon, MicIcon, PlusIcon, StopIcon, TrashIcon } from "./icons";
 import { Sheet } from "./sheet";
+import { interpretar, useRecorder } from "./use-recorder";
 
 type Step =
   | { name: "recording" }
@@ -15,42 +16,22 @@ type Step =
   | { name: "review"; origen: "audio" | "texto" | "manual"; texto?: string }
   | { name: "error"; message: string };
 
-const MAX_SECONDS = 120;
+type GastoLeido = { descripcion: string; monto: number; categoria_id: string | null; fecha: string };
 
 const emptyDraft = (): Draft => ({ descripcion: "", monto: "", categoria_id: null, fecha: today() });
-
-function pickMimeType() {
-  if (typeof MediaRecorder === "undefined") return null;
-  for (const type of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac"]) {
-    if (MediaRecorder.isTypeSupported(type)) return type;
-  }
-  return "";
-}
 
 export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[]; aiEnabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>({ name: "recording" });
-  const [seconds, setSeconds] = useState(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [texto, setTexto] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
-
-  const recorder = useRef<MediaRecorder | null>(null);
-  const chunks = useRef<Blob[]>([]);
-  const cancelled = useRef(false);
-
-  // Timer y corte automático
-  useEffect(() => {
-    if (step.name !== "recording" || !open) return;
-    const started = Date.now();
-    const id = setInterval(() => {
-      const s = Math.floor((Date.now() - started) / 1000);
-      setSeconds(s);
-      if (s >= MAX_SECONDS) recorder.current?.stop();
-    }, 250);
-    return () => clearInterval(id);
-  }, [step.name, open]);
+  const recorder = useRecorder({
+    onAudio: (audio) => void send(audio),
+    onError: (message) => setStep({ name: "error", message }),
+  });
+  const { seconds } = recorder;
 
   useEffect(() => {
     if (!saved) return;
@@ -58,14 +39,9 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
     return () => clearTimeout(id);
   }, [saved]);
 
-  function releaseMic() {
-    recorder.current?.stream.getTracks().forEach((t) => t.stop());
-    recorder.current = null;
-  }
-
   // Sin IA: el botón abre directo la carga campo por campo
   function openManual() {
-    cancelled.current = true;
+    recorder.cancel();
     setDrafts([emptyDraft()]);
     setStep({ name: "review", origen: "manual" });
     setOpen(true);
@@ -73,75 +49,26 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
 
   // Texto libre ("flores 45 mil y nafta 20 mil"), escrito o dictado con el teclado
   function openTyping() {
-    cancelled.current = true;
+    recorder.cancel();
     setTexto("");
     setStep({ name: "typing" });
     setOpen(true);
   }
 
-  async function startRecording() {
-    setSeconds(0);
+  function startRecording() {
     setStep({ name: "recording" });
     setOpen(true);
-    cancelled.current = false;
-
-    const mimeType = pickMimeType();
-    if (mimeType === null || !navigator.mediaDevices?.getUserMedia) {
-      setStep({ name: "error", message: "Este navegador no permite grabar audio. Escribí el gasto." });
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Si cerró la hoja mientras aceptaba el permiso, soltamos el micrófono
-      if (cancelled.current) return stream.getTracks().forEach((t) => t.stop());
-      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      chunks.current = [];
-      rec.ondataavailable = (e) => e.data.size > 0 && chunks.current.push(e.data);
-      rec.onstop = () => {
-        releaseMic();
-        if (cancelled.current) return;
-        const blob = new Blob(chunks.current, { type: rec.mimeType || "audio/mp4" });
-        void send(blob);
-      };
-      recorder.current = rec;
-      rec.start(1000);
-    } catch {
-      setStep({
-        name: "error",
-        message:
-          "No tengo permiso para usar el micrófono. Activalo en Ajustes > Safari > Micrófono, o escribí el gasto.",
-      });
-    }
+    void recorder.start();
   }
 
   function stopRecording() {
-    recorder.current?.stop();
+    recorder.stop();
   }
 
   async function send(payload: Blob | string) {
     setStep({ name: "processing" });
-    const form = new FormData();
-    if (typeof payload === "string") form.set("texto", payload);
-    else form.set("audio", payload, payload.type.includes("webm") ? "audio.webm" : "audio.m4a");
-
     try {
-      const res = await fetch("/api/audio", { method: "POST", body: form });
-      if (res.status === 401) {
-        window.location.href = "/login";
-        return;
-      }
-      const data: {
-        texto?: string;
-        gastos?: { descripcion: string; monto: number; categoria_id: string | null; fecha: string }[];
-        error?: string;
-      } = await res.json();
-
-      if (!res.ok) {
-        setStep({ name: "error", message: data.error ?? "Algo falló. Probá de nuevo." });
-        return;
-      }
-
+      const data = await interpretar<{ gastos?: GastoLeido[] }>(payload, "gastos");
       const found = (data.gastos ?? []).map((g) => ({ ...g, monto: String(g.monto) }));
       setDrafts(found.length ? found : [{ ...emptyDraft(), descripcion: data.texto?.slice(0, 80) ?? "" }]);
       setStep({
@@ -149,15 +76,19 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
         origen: typeof payload === "string" ? "texto" : "audio",
         texto: data.texto,
       });
-    } catch {
-      setStep({ name: "error", message: "Sin conexión. Revisá internet y probá de nuevo." });
+    } catch (error) {
+      setStep({
+        name: "error",
+        message:
+          error instanceof TypeError
+            ? "Sin conexión. Revisá internet y probá de nuevo."
+            : String((error as Error).message),
+      });
     }
   }
 
   function close() {
-    cancelled.current = true;
-    if (recorder.current?.state === "recording") recorder.current.stop();
-    releaseMic();
+    recorder.cancel();
     setOpen(false);
     setTexto("");
   }
@@ -237,9 +168,7 @@ export function VoiceCapture({ categorias, aiEnabled }: { categorias: Categoria[
             <button
               type="button"
               onClick={() => {
-                cancelled.current = true;
-                recorder.current?.stop();
-                releaseMic();
+                recorder.cancel();
                 setStep({ name: "typing" });
               }}
               className="flex items-center gap-2 rounded-full px-4 py-2 text-sm text-ink-2 active:bg-bg"

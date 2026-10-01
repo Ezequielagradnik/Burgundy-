@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adivinarCategoria, interpretarGastos } from "./interpretar.ts";
+import { adivinarCategoria, interpretarFijos, interpretarGastos } from "./interpretar.ts";
 
 const categorias = [
   { id: "flores", nombre: "Flores y plantas" },
@@ -115,4 +115,54 @@ test("miles con coma, como los escribe el dictado del iPhone", () => {
     ["cintas 12,50", 13],
   ];
   for (const [texto, monto] of casos) assert.equal(leer(texto)[0]?.monto, monto, texto);
+});
+
+const fijo = (nombre: string, monto: number, categoria_id: string, regla: object) => ({
+  nombre, monto, categoria_id, frecuencia: "mensual", dia: 1, dias_semana: [], ...regla,
+});
+const leerFijos = (texto: string) => interpretarFijos(texto, { categorias });
+
+test("fijo dictado con días de la semana", () => {
+  assert.deepEqual(leerFijos("flores lunes y miércoles 280 mil"), [
+    fijo("Flores", 280000, "flores", { frecuencia: "semanal", dias_semana: [1, 3] }),
+  ]);
+});
+
+test("varios fijos dictados juntos, con día del mes y quincenal", () => {
+  assert.deepEqual(
+    leerFijos("alquiler 1.370.000 el día 1, luz 160 mil el 10 y papelería cada 15 días 100 mil"),
+    [
+      fijo("Alquiler", 1370000, "alquiler", {}),
+      fijo("Luz", 160000, "servicios", { dia: 10 }),
+      fijo("Papelería", 100000, "packaging", { frecuencia: "quincenal" }),
+    ],
+  );
+});
+
+test("la lista pegada tal cual la mandó la florería", () => {
+  const pegado = `Gastos estimados
+
+Gasto	Frecuencia	Estimado
+🌸 Flores	Lunes y miércoles — $280.000 cada día	$2.240.000/mes
+🏠 Alquiler	Mensual	$1.370.000
+🧾 Expensas	Mensual	$160.000
+🚨 Prosegur	Mensual	$145.000
+💡 Luz	Mensual	$160.000
+📄 Insumos de papelería	Cada 15 días — $100.000	$200.000/mes
+🎀 Insumos de cintas	Cada 15 días — $90.000	$180.000/mes
+🚗 Delivery / movilidad para compras	Variable	A completar
+🛒 Otros gastos de compras	Variable	A completar
+
+Total mensual estimado hasta ahora: $4.455.000
+
+Para las flores calculé 8 compras al mes (4 lunes + 4 miércoles × $280.000). Si algún mes tiene 5 lunes o miércoles, ese gasto subiría.`;
+  assert.deepEqual(leerFijos(pegado), [
+    fijo("Flores", 280000, "flores", { frecuencia: "semanal", dias_semana: [1, 3] }),
+    fijo("Alquiler", 1370000, "alquiler", {}),
+    fijo("Expensas", 160000, "alquiler", {}),
+    fijo("Prosegur", 145000, "servicios", {}),
+    fijo("Luz", 160000, "servicios", {}),
+    fijo("Insumos de papelería", 100000, "packaging", { frecuencia: "quincenal" }),
+    fijo("Insumos de cintas", 90000, "packaging", { frecuencia: "quincenal" }),
+  ]);
 });
