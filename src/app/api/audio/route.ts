@@ -8,7 +8,8 @@ import { interpretarFijos, interpretarGastos } from "@/lib/interpretar";
 export const maxDuration = 60;
 
 const TRANSCRIPTION_MODEL = "openai/gpt-4o-mini-transcribe";
-const PARSER_MODEL = "anthropic/claude-haiku-4.5";
+// El plan gratuito de AI Gateway no incluye Claude; con créditos pagos se puede cambiar por variable
+const PARSER_MODEL = process.env.AI_PARSER_MODEL || "google/gemini-2.5-flash";
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024; // límite de body de Vercel: 4.5 MB
 
 const extraccion = z.object({

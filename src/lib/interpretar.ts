@@ -50,7 +50,7 @@ const RELLENO_INICIO = new Set([
 const RELLENO_FIN = new Set(["a", "al", "por", "de", "del", "en", "el", "la", "x", "que", "me", "salio", "costo", "y"]);
 
 // La coma entre dígitos ("1,5 palos") es decimal, no separa
-const SEPARADOR = /(\s*(?:,(?!\d)|(?<!\d),|[;\n])\s*|\s+(?:y|e|mas|más|tambien|también)\s+|\s*\+\s*)/i;
+const SEPARADOR = /(\s*(?:,(?!\d)|(?<!\d),|[;\n]|\.(?=\s))\s*|\s+(?:y|e|mas|más|tambien|también)\s+|\s*\+\s*)/i;
 
 const normalizar = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -156,14 +156,101 @@ function extraerFecha(texto: string, hoy: string) {
   return { fecha, resto: texto.slice(0, m.index) + " " + texto.slice(m.index + completo.length) };
 }
 
+const UNIDADES: Record<string, number> = {
+  cero: 0, un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9,
+  diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17,
+  dieciocho: 18, diecinueve: 19, veinte: 20, veintiun: 21, veintiuno: 21, veintiuna: 21, veintidos: 22,
+  veintitres: 23, veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28,
+  veintinueve: 29, treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90,
+  cien: 100, ciento: 100, doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300,
+  cuatrocientos: 400, cuatrocientas: 400, quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600,
+  setecientos: 700, setecientas: 700, ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900,
+};
+const ES_DECENA = (n: number) => n >= 30 && n <= 90 && n % 10 === 0;
+const MULT_PALABRA = /^(lucas?|palos?|k)$/;
+
+/**
+ * "doce mil" -> "12 mil", "un millón trescientos setenta mil" -> "1370 mil", "cincuenta rosas" -> "50 rosas".
+ * Deja la palabra "mil"/"millones" para que el monto siga sonando a plata. "una" suelta ("una caja") no se toca.
+ */
+function numerosEnPalabras(texto: string) {
+  const tokens = texto.match(/\p{L}+|[^\p{L}]+/gu) ?? [];
+  const out: string[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    // La racha arranca en una palabra, nunca en el espacio de antes
+    if (!/^\p{L}/u.test(tokens[i])) {
+      out.push(tokens[i]);
+      i++;
+      continue;
+    }
+    // Junta una racha de palabras-número separadas solo por espacios
+    let j = i;
+    let total = 0;
+    let actual = 0;
+    let ultimo: "num" | "mil" | "millon" | null = null;
+    let palabras = 0;
+    let soloUn = true;
+    let conNumero = false;
+    let fin = i;
+    while (j < tokens.length) {
+      const w = normalizar(tokens[j]);
+      if (/^\s+$/.test(tokens[j])) {
+        j++;
+        continue;
+      }
+      if (w in UNIDADES) {
+        actual += UNIDADES[w];
+        conNumero = true;
+        if (!["un", "una", "uno"].includes(w)) soloUn = false;
+        ultimo = "num";
+      } else if (w === "y" && palabras && ES_DECENA(actual % 100) && normalizar(tokens[j + 2] ?? "") in UNIDADES) {
+        // "noventa y cinco": la "y" solo une decena con unidad
+      } else if (w === "mil") {
+        total += (actual || 1) * 1000;
+        actual = 0;
+        soloUn = false;
+        ultimo = "mil";
+      } else if (w === "millon" || w === "millones") {
+        total = (total + (actual || 1)) * 1_000_000;
+        actual = 0;
+        soloUn = false;
+        ultimo = "millon";
+      } else break;
+      palabras++;
+      fin = j + 1;
+      j++;
+    }
+    if (!palabras) {
+      out.push(tokens[i]);
+      i++;
+      continue;
+    }
+    const siguiente = normalizar(tokens.slice(fin).find((t) => !/^\s+$/.test(t)) ?? "");
+    // "20 mil" ya tiene el número en dígitos: el "mil" suelto queda como está.
+    // "una" sola solo es número si viene "luca", "palo"...: "una luca" sí, "una caja" no
+    if (!conNumero || (soloUn && !MULT_PALABRA.test(siguiente))) {
+      out.push(...tokens.slice(i, fin));
+      i = fin;
+      continue;
+    }
+    const valor = total + actual;
+    out.push(
+      ultimo === "mil" ? `${valor / 1000} mil` : ultimo === "millon" ? `${valor / 1_000_000} millones` : String(valor),
+    );
+    i = fin;
+  }
+  return out.join("");
+}
+
 /** Parte la frase en un pedazo por gasto. Un pedazo sin monto se pega al siguiente ("rosas y claveles 50 mil"). */
-function separarGastos(texto: string) {
+function separarGastos(texto: string, tieneMonto = (t: string) => encontrarMontos(t).length > 0) {
   const partes = texto.split(SEPARADOR);
   const segmentos: string[] = [];
   let acumulado = "";
   for (let i = 0; i < partes.length; i += 2) {
     acumulado += partes[i];
-    if (encontrarMontos(acumulado).length) {
+    if (tieneMonto(acumulado)) {
       segmentos.push(acumulado);
       acumulado = "";
     } else if (i + 1 < partes.length) {
@@ -190,7 +277,7 @@ export function interpretarGastos(
 ): GastoInterpretado[] {
   const gastos: GastoInterpretado[] = [];
   let fecha = hoy;
-  for (let segmento of separarGastos(entrada.normalize("NFC").trim())) {
+  for (let segmento of separarGastos(numerosEnPalabras(entrada.normalize("NFC").trim()))) {
     // La fecha dicha vale para este gasto y los que siguen, hasta que se nombre otra
     const conFecha = extraerFecha(segmento, hoy);
     if (conFecha) ({ fecha, resto: segmento } = conFecha);
@@ -225,11 +312,24 @@ const MENSUAL_RE = /\b(?:mensual(?:es|mente)?|por\s+mes|al\s+mes|cada\s+mes|todo
 // "el día 10", "día 10", "el 10" (pero no "el 1.370.000" ni "el 10 mil")
 const DIA_MES_RE = /\b(?:el\s+)?dia\s+(\d{1,2})\b|\bel\s+(\d{1,2})\b(?![.,]\d)(?!\s*(?:mil|lucas?|k|palos?|millon))/g;
 const OTRO_RUIDO_RE = /\bcada\s+(?:dia|vez|uno)\b|\bc\/u\b|\bvariable\b|\bestimado\b/g;
-const RUIDO_FIJO = new Set(["cada", "dia", "dias", "todos", "todas", "los", "las", "o", "y"]);
+const RUIDO_FIJO = new Set([
+  "cada", "dia", "dias", "todos", "todas", "los", "las", "o", "y", "es", "son", "sale", "cuesta", "pago", "compro",
+]);
 
 /** Tapa con espacios lo que matchea, para no mover las posiciones del resto del texto. */
 function tapar(texto: string, re: RegExp) {
   return texto.replace(re, (m) => " ".repeat(m.length));
+}
+
+/** El segmento sin frases de frecuencia ni de día ("cada 15 días", "el día 5"): los números que quedan son plata. */
+function sinFrecuencias(segmento: string) {
+  const n = normalizar(segmento);
+  let limpio = segmento;
+  for (const re of [QUINCENAL_RE, SEMANAL_RE, MENSUAL_RE, DIA_MES_RE, DIA_SEMANA_RE, OTRO_RUIDO_RE]) {
+    const tapado = tapar(normalizar(limpio), re);
+    limpio = [...limpio].map((c, i) => (tapado[i] === " " && n[i] !== " " ? " " : c)).join("");
+  }
+  return limpio;
 }
 
 /**
@@ -238,12 +338,12 @@ function tapar(texto: string, re: RegExp) {
  */
 export function interpretarFijos(entrada: string, { categorias }: { categorias: CategoriaRef[] }): FijoInterpretado[] {
   const fijos: FijoInterpretado[] = [];
-  const sinEmojis = entrada.normalize("NFC").replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, " ");
+  const sinEmojis = numerosEnPalabras(entrada.normalize("NFC")).replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, " ");
 
   for (const linea of sinEmojis.split(/\n+/)) {
     if (/^\s*total\b/.test(normalizar(linea))) continue;
 
-    for (const segmento of separarGastos(linea.trim())) {
+    for (const segmento of separarGastos(linea.trim(), (t) => encontrarMontos(sinFrecuencias(t)).length > 0)) {
       const n = normalizar(segmento);
       const dias = [...new Set([...n.matchAll(DIA_SEMANA_RE)].map((m) => DIAS_ISO.indexOf(m[1]) + 1))].sort(
         (a, b) => a - b,
@@ -255,12 +355,7 @@ export function interpretarFijos(entrada: string, { categorias }: { categorias: 
           ? "semanal"
           : "mensual";
 
-      // Sin las frases de frecuencia y de día, los números que quedan son plata
-      let limpio = segmento;
-      for (const re of [QUINCENAL_RE, SEMANAL_RE, MENSUAL_RE, DIA_MES_RE, DIA_SEMANA_RE, OTRO_RUIDO_RE]) {
-        const tapado = tapar(normalizar(limpio), re);
-        limpio = [...limpio].map((c, i) => (tapado[i] === " " && n[i] !== " " ? " " : c)).join("");
-      }
+      const limpio = sinFrecuencias(segmento);
       const montos = encontrarMontos(limpio);
       const monto = montos.find((m) => m.seguro) ?? elegirMonto(montos);
       // Un fijo de menos de $1.000 no existe: es un número suelto de una oración

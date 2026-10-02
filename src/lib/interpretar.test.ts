@@ -166,3 +166,32 @@ Para las flores calculé 8 compras al mes (4 lunes + 4 miércoles × $280.000). 
     fijo("Insumos de cintas", 90000, "packaging", { frecuencia: "quincenal" }),
   ]);
 });
+
+test("números dichos con palabras, como los transcribe el audio", () => {
+  assert.deepEqual(leer("Ayer compré cincuenta rosas a ochenta lucas y pagué el flete doce mil."), [
+    { descripcion: "50 rosas", monto: 80000, categoria_id: "flores", fecha: "2026-09-28" },
+    { descripcion: "Flete", monto: 12000, categoria_id: "transporte", fecha: "2026-09-28" },
+  ]);
+  const casos: [string, number][] = [
+    ["alquiler un millón trescientos setenta mil", 1370000],
+    ["flores doscientos ochenta mil", 280000],
+    ["cintas noventa y cinco mil", 95000],
+    ["nafta veintiún mil", 21000],
+    ["heladera dos millones quinientos mil", 2500000],
+    ["cafe mil quinientos pesos", 1500],
+  ];
+  for (const [texto, monto] of casos) assert.equal(leer(texto)[0]?.monto, monto, texto);
+});
+
+test("fijos dictados en oraciones, como salen del audio", () => {
+  assert.deepEqual(
+    leerFijos(
+      "Las flores las compro los lunes y los miércoles, doscientos ochenta mil cada vez. El alquiler es un millón trescientos setenta mil el día cinco. Y las cintas cada quince días, noventa mil.",
+    ),
+    [
+      fijo("Flores", 280000, "flores", { frecuencia: "semanal", dias_semana: [1, 3] }),
+      fijo("Alquiler", 1370000, "alquiler", { dia: 5 }),
+      fijo("Cintas", 90000, "packaging", { frecuencia: "quincenal" }),
+    ],
+  );
+});
