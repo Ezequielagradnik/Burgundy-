@@ -3,9 +3,15 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { money, moneyShort } from "@/lib/format";
 
-export type PuntoAcumulado = { dia: number; actual: number | null; anterior: number | null };
+export type PuntoAcumulado = {
+  dia: number;
+  actual: number | null;
+  anterior: number | null;
+  /** Desde hoy: lo gastado más los fijos que faltan */
+  proyectado: number | null;
+};
 
-// Mes elegido en bordó; el anterior en gris, de contexto
+// Mes elegido en bordó (la proyección es la misma serie, punteada); el anterior en gris, de contexto
 const ACTUAL = "#8B2942";
 const ANTERIOR = "#9c8a8e";
 
@@ -17,9 +23,12 @@ export function CumulativeChart({
 }: {
   data: PuntoAcumulado[];
   labelActual: string;
-  labelAnterior: string;
+  /** null: el mes anterior no tiene datos y no se compara */
+  labelAnterior: string | null;
   height?: number;
 }) {
+  const hayProyeccion = data.some((d) => d.proyectado !== null);
+
   return (
     <figure>
       <div className="mb-2 flex gap-4 text-xs text-ink-2">
@@ -27,10 +36,18 @@ export function CumulativeChart({
           <span className="h-0.5 w-4 rounded-full" style={{ background: ACTUAL }} />
           {labelActual}
         </span>
-        <span className="flex items-center gap-1.5 capitalize">
-          <span className="h-0.5 w-4 rounded-full border-t-2 border-dashed" style={{ borderColor: ANTERIOR }} />
-          {labelAnterior}
-        </span>
+        {hayProyeccion ? (
+          <span className="flex items-center gap-1.5">
+            <span className="w-4 border-t-2 border-dashed" style={{ borderColor: ACTUAL }} />
+            Con los fijos que faltan
+          </span>
+        ) : null}
+        {labelAnterior ? (
+          <span className="flex items-center gap-1.5 capitalize">
+            <span className="w-4 border-t-2 border-dotted" style={{ borderColor: ANTERIOR }} />
+            {labelAnterior}
+          </span>
+        ) : null}
       </div>
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -63,7 +80,10 @@ export function CumulativeChart({
                         {labelActual}: {money(d.actual)}
                       </p>
                     ) : null}
-                    {d.anterior !== null ? (
+                    {d.proyectado !== null && d.actual === null ? (
+                      <p className="text-ink-2">Con los fijos que faltan: {money(d.proyectado)}</p>
+                    ) : null}
+                    {labelAnterior && d.anterior !== null ? (
                       <p className="text-ink-2 capitalize">
                         {labelAnterior}: {money(d.anterior)}
                       </p>
@@ -72,15 +92,30 @@ export function CumulativeChart({
                 );
               }}
             />
-            <Line
-              dataKey="anterior"
-              stroke={ANTERIOR}
-              strokeWidth={2}
-              strokeDasharray="4 4"
-              dot={false}
-              activeDot={{ r: 4, stroke: "#fff", strokeWidth: 2 }}
-              connectNulls={false}
-            />
+            {labelAnterior ? (
+              <Line
+                dataKey="anterior"
+                stroke={ANTERIOR}
+                strokeWidth={2}
+                strokeDasharray="1 4"
+                strokeLinecap="round"
+                dot={false}
+                activeDot={{ r: 4, stroke: "#fff", strokeWidth: 2 }}
+                connectNulls={false}
+              />
+            ) : null}
+            {hayProyeccion ? (
+              <Line
+                dataKey="proyectado"
+                stroke={ACTUAL}
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                strokeOpacity={0.6}
+                dot={false}
+                activeDot={{ r: 4, stroke: "#fff", strokeWidth: 2 }}
+                connectNulls={false}
+              />
+            ) : null}
             <Line
               dataKey="actual"
               stroke={ACTUAL}

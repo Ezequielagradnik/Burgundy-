@@ -47,3 +47,21 @@ export function textoFrecuencia(regla: ReglaFijo) {
   const texto = lista(dias);
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
+
+/**
+ * Fijos que todavía no cayeron este mes: después de hoy y sin anotar (un fijo puede estar anotado
+ * por adelantado). anotados: claves "gasto_fijo_id|fecha" de lo que ya está en gastos.
+ */
+export function fijosPendientes(
+  fijos: (ReglaFijo & { id: string; monto: number; activo: boolean })[],
+  anotados: Set<string>,
+  mes: string,
+  hoy: string,
+) {
+  return fijos
+    .filter((f) => f.activo)
+    .flatMap((f) => ocurrenciasEnMes(f, mes).map((fecha) => ({ id: f.id, fecha, monto: f.monto })))
+    .filter((o) => o.fecha > hoy && !anotados.has(`${o.id}|${o.fecha}`))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+    .map(({ fecha, monto }) => ({ fecha, monto }));
+}

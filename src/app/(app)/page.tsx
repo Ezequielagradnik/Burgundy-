@@ -2,7 +2,7 @@ import Link from "next/link";
 import { GastoList } from "@/components/gasto-list";
 import { MonthlyChart } from "@/components/monthly-chart";
 import { getCategorias, getGastosDelMes, getGastosFijos, getResumenMensual, getUltimosGastos } from "@/lib/data";
-import { ocurrenciasEnMes } from "@/lib/fijos";
+import { fijosPendientes } from "@/lib/fijos";
 import { currentMonth, money, monthLabel, today } from "@/lib/format";
 
 export default async function InicioPage() {
@@ -18,11 +18,7 @@ export default async function InicioPage() {
   // Fijos que todavía no cayeron este mes (las flores del próximo lunes, la luz del 10)
   const hoy = today();
   const anotados = new Set(delMes.filter((g) => g.gasto_fijo_id).map((g) => `${g.gasto_fijo_id}|${g.fecha}`));
-  const faltanFijos = fijos
-    .filter((f) => f.activo)
-    .flatMap((f) => ocurrenciasEnMes(f, mes).map((fecha) => ({ f, fecha })))
-    .filter(({ f, fecha }) => fecha > hoy && !anotados.has(`${f.id}|${fecha}`))
-    .reduce((s, { f }) => s + f.monto, 0);
+  const faltanFijos = fijosPendientes(fijos, anotados, mes, hoy).reduce((s, p) => s + p.monto, 0);
 
   const actual = resumen.at(-1)!;
   const anterior = resumen.at(-2)!;

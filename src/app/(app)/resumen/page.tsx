@@ -6,17 +6,26 @@ import { MonthSwitcher, parseMonth } from "@/components/month-switcher";
 import { MonthlyChart } from "@/components/monthly-chart";
 import { SplitBar } from "@/components/split-bar";
 import { logout } from "@/lib/actions";
-import { getCategorias, getGastosDelMes, getResumenMensual, type Gasto, type MesResumen } from "@/lib/data";
+import {
+  getCategorias,
+  getGastosDelMes,
+  getGastosFijos,
+  getResumenMensual,
+  type Gasto,
+  type MesResumen,
+} from "@/lib/data";
+import { fijosPendientes } from "@/lib/fijos";
 import { addMonths, currentMonth, dayLabel, money, monthLabel, today } from "@/lib/format";
 
 export default async function ResumenPage({ searchParams }: PageProps<"/resumen">) {
   const mes = parseMonth((await searchParams).mes);
   const mesAnterior = addMonths(mes, -1);
-  const [categorias, gastos, gastosAnterior, resumen] = await Promise.all([
+  const [categorias, gastos, gastosAnterior, resumen, reglasFijas] = await Promise.all([
     getCategorias(),
     getGastosDelMes(mes),
     getGastosDelMes(mesAnterior),
     getResumenMensual(12),
+    getGastosFijos(),
   ]);
 
   const conGastos = resumen.filter((r) => r.total > 0);
@@ -25,12 +34,28 @@ export default async function ResumenPage({ searchParams }: PageProps<"/resumen"
 
   const fijos = gastos.filter((g) => g.tipo === "fijo").reduce((s, g) => s + g.monto, 0);
   const variables = gastos.filter((g) => g.tipo === "variable").reduce((s, g) => s + g.monto, 0);
-  const mayores = gastos.filter((g) => g.tipo === "variable").sort((a, b) => b.monto - a.monto).slice(0, 5);
+  const mayores = gastos
+    .filter((g) => g.tipo === "variable")
+    .sort((a, b) => b.monto - a.monto)
+    .slice(0, 5);
   const catName = new Map(categorias.map((c) => [c.id, c.nombre]));
 
-  const acumulado = acumularPorDia(mes, gastos, gastosAnterior);
+  // Solo el mes en curso tiene fijos por venir
+  const anotados = new Set(gastos.filter((g) => g.gasto_fijo_id).map((g) => `${g.gasto_fijo_id}|${g.fecha}`));
+  const pendientes = mes === currentMonth() ? fijosPendientes(reglasFijas, anotados, mes, today()) : [];
+  const acumulado = acumularPorDia(mes, gastos, gastosAnterior, pendientes);
   const nombreMes = monthLabel(mes, true).split(" ")[0];
   const nombreAnterior = monthLabel(mesAnterior, true).split(" ")[0];
+  const hayAnterior = gastosAnterior.length > 0;
+  const proyectado = acumulado.at(-1)?.proyectado ?? null;
+  const subtitulo = [
+    hayAnterior
+      ? `Acumulado día por día contra ${nombreAnterior}`
+      : `Acumulado día por día (${nombreAnterior} no tiene gastos cargados)`,
+    proyectado !== null ? `Con los fijos que faltan cierra en ${money(proyectado)}` : null,
+  ]
+    .filter(Boolean)
+    .join(". ");
 
   const tabla = <TablaMensual resumen={resumen} seleccionado={mes} />;
 
@@ -58,8 +83,13 @@ export default async function ResumenPage({ searchParams }: PageProps<"/resumen"
             </div>
           </Card>
 
-          <Card title="Cómo viene el mes" subtitle={`Acumulado día por día contra ${nombreAnterior}`}>
-            <CumulativeChart data={acumulado} labelActual={nombreMes} labelAnterior={nombreAnterior} height={200} />
+          <Card title="Cómo viene el mes" subtitle={subtitulo}>
+            <CumulativeChart
+              data={acumulado}
+              labelActual={nombreMes}
+              labelAnterior={hayAnterior ? nombreAnterior : null}
+              height={200}
+            />
           </Card>
         </div>
 
@@ -178,8 +208,16 @@ function TablaMensual({ resumen, seleccionado }: { resumen: MesResumen[]; selecc
   );
 }
 
-/** Gasto acumulado por día del mes elegido y del anterior. El mes en curso se corta en hoy. */
-function acumularPorDia(mes: string, actual: Gasto[], anterior: Gasto[]): PuntoAcumulado[] {
+/**
+ * Gasto acumulado por día del mes elegido y del anterior. El mes en curso se corta en hoy y,
+ * desde hoy, sigue como proyección sumando los fijos que faltan.
+ */
+function acumularPorDia(
+  mes: string,
+  actual: Gasto[],
+  anterior: Gasto[],
+  pendientes: { fecha: string; monto: number }[],
+): PuntoAcumulado[] {
   const dias = (m: string) => {
     const [y, mo] = m.split("-").map(Number);
     return new Date(Date.UTC(y, mo, 0)).getUTCDate();
@@ -198,17 +236,29 @@ function acumularPorDia(mes: string, actual: Gasto[], anterior: Gasto[]): PuntoA
   const hasta = mes === currentMonth() ? Number(today().slice(8, 10)) : diasActual;
   const totActual = porDia(actual);
   const totAnterior = porDia(anterior);
+  const totPendiente = new Map<number, number>();
+  for (const p of pendientes) {
+    const d = Number(p.fecha.slice(8, 10));
+    totPendiente.set(d, (totPendiente.get(d) ?? 0) + p.monto);
+  }
+  const conProyeccion = mes === currentMonth() && pendientes.length > 0;
 
   let sumaActual = 0;
   let sumaAnterior = 0;
+  let sumaProyectada = 0;
   return Array.from({ length: Math.max(diasActual, diasAnterior) }, (_, i) => {
     const dia = i + 1;
-    sumaActual += totActual.get(dia) ?? 0;
+    // Lo ya anotado con fecha futura (un fijo cargado por adelantado) cuenta en la proyección
+    if (dia <= hasta) sumaActual += totActual.get(dia) ?? 0;
+    else sumaProyectada += totActual.get(dia) ?? 0;
+    sumaProyectada += dia > hasta ? (totPendiente.get(dia) ?? 0) : 0;
     sumaAnterior += totAnterior.get(dia) ?? 0;
     return {
       dia,
       actual: dia <= hasta && dia <= diasActual ? sumaActual : null,
       anterior: dia <= diasAnterior ? sumaAnterior : null,
+      // Arranca en hoy, pegada a la línea real, y sigue hasta fin de mes
+      proyectado: conProyeccion && dia >= hasta && dia <= diasActual ? sumaActual + sumaProyectada : null,
     };
   });
 }
