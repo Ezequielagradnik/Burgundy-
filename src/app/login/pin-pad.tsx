@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { login } from "@/lib/actions";
 
@@ -10,6 +11,7 @@ export function PinPad() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   function press(key: string) {
     if (pending) return;
@@ -21,11 +23,20 @@ export function PinPad() {
     setPin(next);
     if (next.length === PIN_LENGTH) {
       startTransition(async () => {
-        const result = await login(next);
-        if (result?.error) {
-          setError(result.error);
+        try {
+          const result = await login(next);
+          if (result.error) {
+            setError(result.error);
+            setPin("");
+            navigator.vibrate?.(120);
+            return;
+          }
+          // Navegar desde acá (no con redirect en el servidor): si el inicio falla,
+          // se ve la pantalla de error en vez de quedar trabado en el login
+          router.replace("/");
+        } catch {
+          setError("No hay conexión. Probá de nuevo.");
           setPin("");
-          navigator.vibrate?.(120);
         }
       });
     }

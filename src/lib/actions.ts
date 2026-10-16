@@ -21,6 +21,7 @@ function refresh() {
 
 // Login -----------------------------------------------------------------
 
+/** Solo valida y deja la cookie; la navegación la hace el cliente (ver PinPad). */
 export async function login(pin: string): Promise<{ error?: string }> {
   // Freno simple a la fuerza bruta: cada intento tarda un poco
   await new Promise((r) => setTimeout(r, 400));
@@ -34,7 +35,7 @@ export async function login(pin: string): Promise<{ error?: string }> {
     path: "/",
     maxAge: SESSION_MAX_AGE,
   });
-  redirect("/");
+  return {};
 }
 
 export async function logout() {

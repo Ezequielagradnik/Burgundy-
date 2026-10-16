@@ -19,5 +19,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Todo menos assets, íconos y el manifest (el iPhone los pide sin cookie)
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/|apple-icon|icon).*)"],
+  // y el cron, que no tiene sesión: se autentica con CRON_SECRET en su propia ruta
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/|apple-icon|icon|api/cron/).*)"],
 };
